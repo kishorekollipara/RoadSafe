@@ -1,20 +1,21 @@
 package com.safedrive.com.roadsafe;
 
-import android.location.Location;
-import android.os.Bundle;
-import android.support.v7.app.ActionBarActivity;
-import android.view.View;
-import android.widget.Button;
-import android.widget.TextView;
-import android.widget.Toast;
-
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.telephony.PhoneStateListener;
+import android.location.Location;
+import android.media.AudioManager;
+import android.os.Bundle;
+import android.support.v7.app.ActionBarActivity;
 import android.telephony.TelephonyManager;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.SeekBar;
+import android.widget.TextView;
 
 
+import com.android.internal.telephony.ITelephony;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
@@ -23,18 +24,23 @@ import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 
+import java.lang.reflect.Method;
 import java.text.DateFormat;
 import java.util.Date;
 
 
 public class MainActivity extends ActionBarActivity
         implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener {
-
+    public static Context context = null;
     private static final String STATE_RESOLVING_ERROR = "resolving_error";
     protected final static String REQUESTING_LOCATION_UPDATES_KEY = "requesting-location-updates-key";
     protected final static String LOCATION_KEY = "location-key";
     protected final static String LAST_UPDATED_TIME_STRING_KEY = "last-updated-time-string-key";
-    protected final static String LAST_APP_STATE_KEY ="last-updated-app-state-key";
+    protected final static String LAST_APP_STATE_KEY = "last-updated-app-state-key";
+
+    public static int speedLimit;
+    public static double speed;
+    public static boolean appState;
 
     private GoogleApiClient mGoogleApiClient;
     private Location mCurrentLocation;
@@ -50,13 +56,21 @@ public class MainActivity extends ActionBarActivity
     protected TextView mLatitudeTextView;
     protected TextView mLongitudeTextView;
     protected TextView mSpeedTextView;
+    protected EditText mSpeedLimit;
 
-    public boolean appState = true;
+    protected void onNewIntent(Intent intent) {
+
+        super.onNewIntent(intent);
+
+        // NOW getIntent() should always return the recent
+
+        setIntent(intent);
+    }
 
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        context = getApplicationContext();
         mStartUpdatesButton = (Button) findViewById(R.id.start_updates_button);
         mStopUpdatesButton = (Button) findViewById(R.id.stop_updates_button);
 
@@ -64,16 +78,18 @@ public class MainActivity extends ActionBarActivity
         mLongitudeTextView = (TextView) findViewById(R.id.longitude_text);
         mLastUpdateTimeTextView = (TextView) findViewById(R.id.last_update_time_text);
         mSpeedTextView = (TextView) findViewById(R.id.speed_text);
+        mSpeedLimit = (EditText) findViewById(R.id.speed_limit);
         mRequestingLocationUpdates = false;
         mLastUpdateTime = "";
-
         updateValuesFromBundle(savedInstanceState);
 
         buildGoogleApiClient();
     }
 
     public void startUpdatesButtonHandler(View view) {
-        appState= true;
+
+        appState = true;
+
         if (!mRequestingLocationUpdates) {
             mRequestingLocationUpdates = true;
             setButtonsEnabledState();
@@ -81,11 +97,13 @@ public class MainActivity extends ActionBarActivity
 
         }
     }
+
     public void stopUpdatesButtonHandler(View view) {
         if (mRequestingLocationUpdates) {
             mRequestingLocationUpdates = false;
             setButtonsEnabledState();
             stopLocationUpdates();
+
             appState = false;
         }
     }
@@ -124,9 +142,20 @@ public class MainActivity extends ActionBarActivity
                 mLastUpdateTime = savedInstanceState.getString(LAST_UPDATED_TIME_STRING_KEY);
             }
 
-            if (savedInstanceState.keySet().contains(LAST_APP_STATE_KEY)) {
-                appState = savedInstanceState.getBoolean(LAST_APP_STATE_KEY);
+            if(savedInstanceState.keySet().contains(LAST_APP_STATE_KEY)){
+                appState = Boolean.parseBoolean(savedInstanceState.getString(LAST_UPDATED_TIME_STRING_KEY));
             }
+
+
+            if(savedInstanceState.keySet().contains("Speed")){
+                speed = Double.parseDouble(savedInstanceState.getString("Speed"));
+            }
+
+            if(savedInstanceState.keySet().contains("SpeedLimit")){
+                speedLimit = Integer.parseInt(savedInstanceState.getString("SpeedLimit"));
+            }
+
+
             updateUI();
         }
     }
@@ -136,7 +165,10 @@ public class MainActivity extends ActionBarActivity
         mLatitudeTextView.setText(String.valueOf(mCurrentLocation.getLatitude()));
         mLongitudeTextView.setText(String.valueOf(mCurrentLocation.getLongitude()));
         mLastUpdateTimeTextView.setText(mLastUpdateTime);
-        mSpeedTextView.setText(String.valueOf(mCurrentLocation.getSpeed()*2.2369));
+        mSpeedTextView.setText(String.valueOf(mCurrentLocation.getSpeed() * 2.2369));
+        speed = mCurrentLocation.getSpeed() * 2.2369;
+        speedLimit = Integer.parseInt(mSpeedLimit.getText().toString());
+
     }
 
     protected synchronized void buildGoogleApiClient() {
@@ -147,7 +179,6 @@ public class MainActivity extends ActionBarActivity
                 .build();
         createLocationRequest();
     }
-
 
 
     protected void createLocationRequest() {
@@ -196,6 +227,7 @@ public class MainActivity extends ActionBarActivity
             startLocationUpdates();
         }
     }
+
     @Override
     public void onConnectionSuspended(int cause) {
         mGoogleApiClient.connect();
@@ -212,7 +244,7 @@ public class MainActivity extends ActionBarActivity
         mLastUpdateTime = DateFormat.getTimeInstance().format(new Date());
         updateUI();
         //Toast.makeText(this, getResources().getString(R.string.location_updated_message),
-          //      Toast.LENGTH_SHORT).show();
+        //      Toast.LENGTH_SHORT).show();
     }
 
     protected void startLocationUpdates() {
@@ -232,11 +264,15 @@ public class MainActivity extends ActionBarActivity
         savedInstanceState.putParcelable(LOCATION_KEY, mCurrentLocation);
         savedInstanceState.putString(LAST_UPDATED_TIME_STRING_KEY, mLastUpdateTime);
         savedInstanceState.putBoolean(LAST_APP_STATE_KEY,appState);
+        savedInstanceState.putInt("SpeedLimit", speedLimit);
+        savedInstanceState.putDouble("Speed", speed);
         super.onSaveInstanceState(savedInstanceState);
     }
 
 
-}
+    }
+
+
 
 
 
